@@ -2,10 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\ProfileUpdateRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Redirect;
+use App\Http\Requests\ProfileUpdateRequest;
+use App\Http\Requests\ProfileUploadRequest;
 
 class ProfileController extends Controller
 {
@@ -17,9 +18,10 @@ class ProfileController extends Controller
      */
     public function edit(Request $request)
     {
-        return view('profile.edit', [
-            'user' => $request->user(),
-        ]);
+        $user = $request->user();
+        $this->authorize('update', $user);
+
+        return view('profile.edit', compact('user'));
     }
 
     /**
@@ -30,13 +32,16 @@ class ProfileController extends Controller
      */
     public function update(ProfileUpdateRequest $request)
     {
-        $request->user()->fill($request->validated());
+        $user = $request->user();
+        $this->authorize('update', $user);
 
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
+        $user->fill($request->validated());
+
+        if ($user->isDirty('email')) {
+            $user->email_verified_at = null;
         }
 
-        $request->user()->save();
+        $user->save();
 
         return Redirect::route('profile.edit')->with('status', 'profile-updated');
     }
@@ -49,11 +54,12 @@ class ProfileController extends Controller
      */
     public function destroy(Request $request)
     {
+        $user = $request->user();
+        $this->authorize('delete', $user);
+
         $request->validateWithBag('userDeletion', [
             'password' => ['required', 'current-password'],
         ]);
-
-        $user = $request->user();
 
         Auth::logout();
 
@@ -63,5 +69,31 @@ class ProfileController extends Controller
         $request->session()->regenerateToken();
 
         return Redirect::to('/');
+    }
+
+    /**
+     * Upload users avatar
+     *
+     * @param App\Http\Requests\ProfileUploadRequest $request
+     * @return void
+     */
+    public function upload(ProfileUploadRequest $request)
+    {
+        $user = $request->user();
+        $this->authorize('update', $user);
+
+        $filename = '';
+        if($request->hasFile('avatar')){
+            $user->deleteAvatar();
+            
+            $filename = $user->saveAvatar($request->file('avatar')); 
+        }
+        
+        if ($filename) {
+            $user->fill(['avatar'=>$filename]);
+        }
+        $user->save();
+
+        return Redirect::route('profile.edit')->with('status', 'photo-updated');
     }
 }
